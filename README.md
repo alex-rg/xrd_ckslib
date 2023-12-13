@@ -17,5 +17,5 @@ $ g++ -g -shared -o MyXrdCksManager.so MyXrdCksManager.o
 ## Usage
 To use the library, add the following to xrootd config:
 ```
-ofs.ckslib * /etc/xrootd/MyXrdCksManager.so
+ofs.ckslib * <path to MyXrdCksManager.so>
 ```
