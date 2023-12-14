@@ -46,14 +46,16 @@ class MyXrdCksManager : public XrdCks
 public:
   MyXrdCksManager(XrdSysError *erP) : XrdCks(erP) {};
 
-  const char *Type(int &csSize) {return "adler32";}
-
   /******************************************************************************/
   /*                                   G e t                                    */
   /******************************************************************************/
 
   int Get(const char *Pfn, XrdCksData &Cks)
   {
+     /* This method is basically a copy of XrdCksManager::Get, but without stale
+      * checksum check
+      */
+    
      XrdOucXAttr<XrdCksXAttr> xCS;
      int rc, nFault;
   
@@ -78,11 +80,11 @@ public:
     return -ENOTSUP;
   };
 
-  int        Calc( const char *Xfn, XrdCksData &Cks, int doSet=1) {
+  int Calc( const char *Xfn, XrdCksData &Cks, int doSet=1) {
     return -ENOTSUP;
   };
 
-  int        Ver(  const char *Xfn, XrdCksData &Cks) {
+  int Ver(  const char *Xfn, XrdCksData &Cks) {
     return 0;
   };
 
@@ -100,10 +102,6 @@ public:
 
   const char *Name(int seqNum=0) {
     return "adler32";
-  };
-
-  XrdCksCalc *Object(const char *name) {
-    return NULL;
   };
 
   int Size (const char *Name=0) {
