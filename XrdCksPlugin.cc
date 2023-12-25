@@ -29,11 +29,15 @@
 /******************************************************************************/
 
 #include <cerrno>
+#include <cstdio>
 
 #include "XrdCks/XrdCksXAttr.hh"
 #include "XrdCks/XrdCks.hh"
 #include "XrdOuc/XrdOucXAttr.hh"
 #include "XrdVersion.hh"
+
+#include "XrdOuc/XrdOucProg.hh"
+#include "XrdOuc/XrdOucStream.hh"
 
 
 #ifndef ENOATTR
@@ -44,7 +48,12 @@
 class XrdCksPlugin : public XrdCks
 {
 public:
+  XrdOucProg theProg = XrdOucProg(0);
+
   XrdCksPlugin(XrdSysError *erP) : XrdCks(erP) {};
+    int (*ppntr)(XrdOucStream*, char**, int) =0;
+    theProg.Setup("/etc/xrootd/xrd_cephsum.sh", erP, ppntr);
+  };
 
   /******************************************************************************/
   /*                                   G e t                                    */
@@ -81,7 +90,24 @@ public:
   };
 
   int Calc( const char *Xfn, XrdCksData &Cks, int doSet=1) {
-    return -ENOTSUP;
+    int rc;
+    char* ln;
+    char out_buf[9];
+    //fprintf(stderr, "Going to launch program");
+    rc = theProg.Run(out_buf, 9, Xfn, NULL, NULL, NULL);  
+    for (int i=0; i<4; i++) {
+      Cks.Value[i] = 0;
+      for (int j=0; j<2; j++) {
+        unsigned char c;
+        Cks.Value[i] += ((c = (out_buf[2*i + j] - '0')) < 10 ? c : (out_buf[2*i + j] - 'a' + 10)) * (j == 0 ? 16 : 1);
+      }
+    } 
+    if (rc == 0) {
+      //fprintf(stderr, "Prog failed: %d\n", rc);
+      Cks.Length = strnlen(Cks.Value, Cks.ValuSize);
+    } 
+    //fprintf(stderr, "Program finished successfully, got output %s\n", out_buf);
+    return rc;
   };
 
   int Ver(  const char *Xfn, XrdCksData &Cks) {
