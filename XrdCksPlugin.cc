@@ -172,6 +172,7 @@ public:
     unsigned int unSum1=1;
     unsigned int unSum2=0;
     unsigned int AdlerValue=0;
+    unsigned char* local_buf;
     int rc=0, k=0, BLen=0;
     off_t file_size=0, offset=0;
     size_t chunk_size=0;
@@ -206,15 +207,17 @@ public:
     while (offset < file_size) {
       chunk_size = buf_size <= file_size - offset ? buf_size : file_size - offset;
       BLen = oss_file->Read(buf, offset, chunk_size);
+      local_buf = buf;
+      printf("offset=%u, blen=%u\n", offset, BLen);
       offset += BLen;
       while(BLen > 0) {
         k = (BLen < AdlerNMax ? BLen : AdlerNMax);
         BLen -= k;
         while(k >= 16) {
-          DO16(buf);
+          DO16(local_buf);
           k -= 16;
         }
-        if (k != 0) do {DO1(buf);} while (--k);
+        if (k != 0) do {DO1(local_buf);} while (--k);
         unSum1 %= AdlerBase; unSum2 %= AdlerBase;
       }
     }
@@ -223,10 +226,18 @@ public:
     AdlerValue = htonl(AdlerValue);
 #endif
   
-    oss_file->Close();
     //Insert timestamp addition here
+    printf("Copying data, its size is %d\n", sizeof(AdlerValue));
     memcpy(Cks.Value, (char*)&AdlerValue, 4);
+    printf("Copied successfully");
     Cks.Length = 4;
+
+    if (doSet) {
+      XrdOucXAttr<XrdCksXAttr> xCS;
+      memcpy(&xCS.Attr.Cks, &Cks, sizeof(xCS.Attr.Cks));
+      if ((rc = xCS.Set(Xfn))) return -rc;
+    }
+    oss_file->Close();
     return 0;
   };
 
