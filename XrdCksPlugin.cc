@@ -1,3 +1,5 @@
+/* The file is based on XrootD's implementation of Checksum manager, so all copyrights are included below */
+
 /******************************************************************************/
 /*                                                                            */
 /*                   X r d O s s C k s M a n a g e r . c c                    */
@@ -28,16 +30,60 @@
 /* specific prior written permission of the institution or contributor.       */
 /******************************************************************************/
 
+
+/* The following implementation of adler32 was derived from zlib and is
+                   * Copyright (C) 1995-1998 Mark Adler
+   Below are the zlib license terms for this implementation.
+*/
+
+/* zlib.h -- interface of the 'zlib' general purpose compression library
+  version 1.1.4, March 11th, 2002
+
+  Copyright (C) 1995-2002 Jean-loup Gailly and Mark Adler
+
+  This software is provided 'as-is', without any express or implied
+  warranty.  In no event will the authors be held liable for any damages
+  arising from the use of this software.
+
+  Permission is granted to anyone to use this software for any purpose,
+  including commercial applications, and to alter it and redistribute it
+  freely, subject to the following restrictions:
+
+  1. The origin of this software must not be misrepresented; you must not
+     claim that you wrote the original software. If you use this software
+     in a product, an acknowledgment in the product documentation would be
+     appreciated but is not required.
+  2. Altered source versions must be plainly marked as such, and must not be
+     misrepresented as being the original software.
+  3. This notice may not be removed or altered from any source distribution.
+
+  Jean-loup Gailly        Mark Adler
+  jloup@gzip.org          madler@alumni.caltech.edu
+
+
+  The data format used by the zlib library is described by RFCs (Request for
+  Comments) 1950 to 1952 in the files ftp://ds.internic.net/rfc/rfc1950.txt
+  (zlib format), rfc1951.txt (deflate format) and rfc1952.txt (gzip format).
+*/
+
+
 #include <cerrno>
 #include <cstdio>
+
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "XrdCks/XrdCksXAttr.hh"
 #include "XrdCks/XrdCks.hh"
 #include "XrdOuc/XrdOucXAttr.hh"
+#include "XrdOss/XrdOss.hh"
+#include "XrdOss/XrdOssApi.hh"
 #include "XrdVersion.hh"
 
 #include "XrdOuc/XrdOucProg.hh"
 #include "XrdOuc/XrdOucStream.hh"
+#include "XrdOuc/XrdOucPinLoader.hh"
+#include "XrdOuc/XrdOucEnv.hh"
 
 
 #ifndef ENOATTR
@@ -45,15 +91,48 @@
 #endif
 
 
+<<<<<<< HEAD:XrdCksPlugin.cc
 class XrdCksPlugin : public XrdCks
+=======
+#define DO1(buf)  {unSum1 += *buf++; unSum2 += unSum1;}
+#define DO2(buf)  DO1(buf); DO1(buf);
+#define DO4(buf)  DO2(buf); DO2(buf);
+#define DO8(buf)  DO4(buf); DO4(buf);
+#define DO16(buf) DO8(buf); DO8(buf);
+
+
+
+
+class MyXrdCksManager : public XrdCks
 {
+  static const unsigned int AdlerBase  = 0xFFF1;
+  static const unsigned int AdlerStart = 0x0001;
+  static const          int AdlerNMax  = 5552;
+  size_t buf_size = 1024;
+  unsigned char* buf;
+  char* osslib = "/opt/xrootd/lib64/libXrdCeph.so";
+  XrdOss* ossp;
 public:
   XrdOucProg theProg = XrdOucProg(0);
 
   XrdCksPlugin(XrdSysError *erP) : XrdCks(erP) {};
-    int (*ppntr)(XrdOucStream*, char**, int) =0;
-    theProg.Setup("/etc/xrootd/xrd_cephsum.sh", erP, ppntr);
+    XrdOucPinLoader *myLib;
+    buf = new unsigned char[buf_size];
+    XrdOssSys myOssSys;
+    XrdOssGetStorageSystem_t getOSS;
+
+    if (!(myLib = new XrdOucPinLoader(erP, myOssSys.myVersion, "osslib", osslib))) {
+      ossp = NULL;
+    } else {
+      getOSS = (XrdOssGetStorageSystem_t) myLib->Resolve("XrdOssGetStorageSystem");
+      ossp = getOSS((XrdOss*) &myOssSys, NULL, "/etc/xrootd/xrootd-xrootd1.cfg", NULL);
+      delete myLib;
+    }
   };
+
+  ~MyXrdCksManager() {
+    free(buf);
+  }
 
   /******************************************************************************/
   /*                                   G e t                                    */
@@ -90,24 +169,65 @@ public:
   };
 
   int Calc( const char *Xfn, XrdCksData &Cks, int doSet=1) {
-    int rc;
-    char* ln;
-    char out_buf[9];
-    //fprintf(stderr, "Going to launch program");
-    rc = theProg.Run(out_buf, 9, Xfn, NULL, NULL, NULL);  
-    for (int i=0; i<4; i++) {
-      Cks.Value[i] = 0;
-      for (int j=0; j<2; j++) {
-        unsigned char c;
-        Cks.Value[i] += ((c = (out_buf[2*i + j] - '0')) < 10 ? c : (out_buf[2*i + j] - 'a' + 10)) * (j == 0 ? 16 : 1);
+    unsigned int unSum1=1;
+    unsigned int unSum2=0;
+    unsigned int AdlerValue=0;
+    int rc=0, k=0, BLen=0;
+    off_t file_size=0, offset=0;
+    size_t chunk_size=0;
+    XrdOssDF* oss_file=NULL;
+    XrdOucEnv env;
+    struct stat stat_data;
+
+    if (!ossp) {
+      return -ELIBBAD;
+    }
+    oss_file = ossp->newFile(Xfn);
+    if (!oss_file) {
+      return -ELIBACC;
+    }
+
+    /*Open file*/
+    rc = oss_file->Open(Xfn, O_RDONLY, 0, env);
+    if (rc != XrdOssOK) {
+      return rc;
+    }
+
+    /*Stat file, to get its size*/
+    rc = oss_file->Fstat(&stat_data);
+    if (rc != 0) {
+      return rc;
+    }
+    file_size = stat_data.st_size;
+
+    /* Copied from XrdCks/XrdCksCalcadler32.hh, which in turn based on zlib.
+ *   zlib copyright is applicable, see above.
+ *  */
+    while (offset < file_size) {
+      chunk_size = buf_size <= file_size - offset ? buf_size : file_size - offset;
+      BLen = oss_file->Read(buf, offset, chunk_size);
+      offset += BLen;
+      while(BLen > 0) {
+        k = (BLen < AdlerNMax ? BLen : AdlerNMax);
+        BLen -= k;
+        while(k >= 16) {
+          DO16(buf);
+          k -= 16;
+        }
+        if (k != 0) do {DO1(buf);} while (--k);
+        unSum1 %= AdlerBase; unSum2 %= AdlerBase;
       }
-    } 
-    if (rc == 0) {
-      //fprintf(stderr, "Prog failed: %d\n", rc);
-      Cks.Length = strnlen(Cks.Value, Cks.ValuSize);
-    } 
-    //fprintf(stderr, "Program finished successfully, got output %s\n", out_buf);
-    return rc;
+    }
+    AdlerValue = (unSum2 << 16) | unSum1;
+#ifndef Xrd_Big_Endian
+    AdlerValue = htonl(AdlerValue);
+#endif
+  
+    oss_file->Close();
+    //Insert timestamp addition here
+    memcpy(Cks.Value, (char*)&AdlerValue, 4);
+    Cks.Length = 4;
+    return 0;
   };
 
   int Ver(  const char *Xfn, XrdCksData &Cks) {
