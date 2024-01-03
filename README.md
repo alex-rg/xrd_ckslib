@@ -1,7 +1,7 @@
 # xrd_ckslib
 ## General
-This is an xrootd checksum plugin that provides *only get* method for checksum retrieval, i.e. checksum retrieval from file attributes.
-Can be combined with checksum script to speed up retrieval process.
+This is an xrootd checksum plugin that provides Get and Calc methods for checksum retrieval.
+Calc simply runs external checksum script.
 
 ## Compilation
 This library can be compiled as follows:
@@ -17,5 +17,5 @@ $ g++ -g -shared -o MyXrdCksManager.so MyXrdCksManager.o
 ## Usage
 To use the library, add the following to xrootd config:
 ```
-ofs.ckslib * <path to MyXrdCksManager.so>
+ofs.ckslib * <path to MyXrdCksManager.so> <path to checksum script>
 ```

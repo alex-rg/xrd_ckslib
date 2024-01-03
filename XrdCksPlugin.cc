@@ -50,9 +50,9 @@ class XrdCksPlugin : public XrdCks
 public:
   XrdOucProg theProg = XrdOucProg(0);
 
-  XrdCksPlugin(XrdSysError *erP) : XrdCks(erP) {
+  XrdCksPlugin(XrdSysError *erP, const char* prog) : XrdCks(erP) {
     int (*ppntr)(XrdOucStream*, char**, int) =0;
-    theProg.Setup("/etc/xrootd/xrd_cephsum.sh", erP, ppntr);
+    theProg.Setup(prog, erP, ppntr);
   };
 
   /******************************************************************************/
@@ -92,21 +92,20 @@ public:
   int Calc( const char *Xfn, XrdCksData &Cks, int doSet=1) {
     int rc;
     char* ln;
-    char out_buf[9];
-    //fprintf(stderr, "Going to launch program");
-    rc = theProg.Run(out_buf, 9, Xfn, NULL, NULL, NULL);  
-    for (int i=0; i<4; i++) {
-      Cks.Value[i] = 0;
-      for (int j=0; j<2; j++) {
-        unsigned char c;
-        Cks.Value[i] += ((c = (out_buf[2*i + j] - '0')) < 10 ? c : (out_buf[2*i + j] - 'a' + 10)) * (j == 0 ? 16 : 1);
-      }
-    } 
-    if (rc == 0) {
-      //fprintf(stderr, "Prog failed: %d\n", rc);
-      Cks.Length = strnlen(Cks.Value, Cks.ValuSize);
-    } 
-    //fprintf(stderr, "Program finished successfully, got output %s\n", out_buf);
+    char out_buf[1024];
+    rc = theProg.Run(out_buf, 1024, Xfn, NULL, NULL, NULL);  
+    if (rc != 0) {
+      eDest->Emsg("CksLib: checksum caclulation failed for ", Xfn, "Error message: ", out_buf);
+    } else {
+      for (int i=0; i<4; i++) {
+        Cks.Value[i] = 0;
+        for (int j=0; j<2; j++) {
+          unsigned char c;
+          Cks.Value[i] += ((c = (out_buf[2*i + j] - '0')) < 10 ? c : (out_buf[2*i + j] - 'a' + 10)) * (j == 0 ? 16 : 1);
+        }
+      } 
+      Cks.Length = 4;
+    }
     return rc;
   };
 
@@ -144,7 +143,7 @@ extern "C" XrdCksPlugin *XrdCksInit(XrdSysError *eDest,
                                           const char  *csName,
                                           const char  *cFN,
                                           const char  *Parms) {
-  return new XrdCksPlugin(eDest);
+  return new XrdCksPlugin(eDest, cFN);
 };
 
 XrdVERSIONINFO(XrdCksInit,"MyCksums-2");
