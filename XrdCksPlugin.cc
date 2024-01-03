@@ -108,30 +108,40 @@ class MyXrdCksManager : public XrdCks
   static const unsigned int AdlerBase  = 0xFFF1;
   static const unsigned int AdlerStart = 0x0001;
   static const          int AdlerNMax  = 5552;
+  size_t max_parms_length = 4096;
   size_t buf_size = 1024;
-  unsigned char* buf;
-  char* osslib = "/opt/xrootd/lib64/libXrdCeph.so";
-  XrdOss* ossp;
+  unsigned char* buf = NULL;
+  char* oss_parms = NULL;
+  XrdOss* ossp = NULL;
 public:
   XrdOucProg theProg = XrdOucProg(0);
 
-  XrdCksPlugin(XrdSysError *erP) : XrdCks(erP) {};
-    XrdOucPinLoader *myLib;
-    buf = new unsigned char[buf_size];
-    XrdOssSys myOssSys;
-    XrdOssGetStorageSystem_t getOSS;
-
-    if (!(myLib = new XrdOucPinLoader(erP, myOssSys.myVersion, "osslib", osslib))) {
-      ossp = NULL;
-    } else {
-      getOSS = (XrdOssGetStorageSystem_t) myLib->Resolve("XrdOssGetStorageSystem");
-      ossp = getOSS((XrdOss*) &myOssSys, NULL, "/etc/xrootd/xrootd-xrootd1.cfg", NULL);
-      delete myLib;
+  XrdCksPlugin(XrdSysError *erP, const char* parms=NULL) : XrdCks(erP) {
+    if (NULL != parms) {
+      /* First parameter is buffer size */
+      char* str_end;
+      size_t tval = strtoul(parms, &str_end, 10);
+      if (tval > 0 && errno != ERANGE) {
+        buf_size = tval;
+      }
+      /* The rest is osslib params */
+      if ('\0' != *str_end) {
+        if (' ' == *str_end) {
+          str_end++;
+        }
+        size_t parm_len = strnlen(str_end, max_parms_length);
+        oss_parms = new char[parm_len + 1]; 
+        strncpy(oss_parms, str_end, parm_len + 1);
+      }
     }
+    buf = new unsigned char[buf_size];
   };
 
-  ~MyXrdCksManager() {
-    free(buf);
+  ~XrdCksPlugin() {
+    delete [] buf;
+    if (NULL != oss_parms) {
+      delete [] oss_parms;
+    }
   }
 
   /******************************************************************************/
@@ -227,9 +237,7 @@ public:
 #endif
   
     //Insert timestamp addition here
-    printf("Copying data, its size is %d\n", sizeof(AdlerValue));
     memcpy(Cks.Value, (char*)&AdlerValue, 4);
-    printf("Copied successfully");
     Cks.Length = 4;
 
     if (doSet) {
@@ -250,7 +258,46 @@ public:
   };
 
   int Init(const char *ConfigFN, const char *DfltCalc=0) {
-    return 1;
+    XrdOucPinLoader *myLib;
+    XrdOssSys myOssSys;
+    XrdOssGetStorageSystem_t getOSS;
+
+    int res = 1;
+    
+    if (NULL == oss_parms) {
+      res = 0;
+      eDest->Say("ChkLib: Failed to load osslib for checksums: probably it is not specified.");
+    } else {
+      //Let's separate lib path from its params. Pretty ugly way to do it.
+      char lib_path[1024];
+      char* lib_parms = oss_parms, *tptr=lib_path;
+      while (' ' != *lib_parms && '\0' != *lib_parms) {
+        *tptr = *lib_parms; 
+        lib_parms++;
+        tptr++;
+      }
+      *tptr = '\0';
+      if (' ' == *lib_parms) {
+        lib_parms++;
+      } else {
+        lib_parms = NULL;
+      }
+
+      try {
+        myLib = new XrdOucPinLoader(eDest, myOssSys.myVersion, "osslib", lib_path);
+      } catch(std::bad_alloc) {
+        eDest->Say("ChkLib: Failed to load osslib for checksums: can not allocate memory for plugin.");
+        res = 0;
+      }
+     
+      if (1 == res) {
+        getOSS = (XrdOssGetStorageSystem_t) myLib->Resolve("XrdOssGetStorageSystem");
+        ossp = getOSS((XrdOss*) &myOssSys, eDest->logger(), lib_path, lib_parms);
+        delete myLib;
+      }
+    }
+
+    return res;
   };
 
   char * List(const char *Xfn, char *Buff, int Blen, char Sep=' ') {
@@ -271,11 +318,12 @@ public:
 };
 
 
+<<<<<<< HEAD:XrdCksPlugin.cc
 extern "C" XrdCksPlugin *XrdCksInit(XrdSysError *eDest,
                                           const char  *csName,
                                           const char  *cFN,
                                           const char  *Parms) {
-  return new XrdCksPlugin(eDest);
+  return new XrdCksPlugin(eDest, cFN);
 };
 
 XrdVERSIONINFO(XrdCksInit,"MyCksums-2");
