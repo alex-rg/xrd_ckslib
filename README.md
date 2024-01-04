@@ -10,12 +10,12 @@ This library can be compiled as follows:
 3. Then compilation can be done like this:
 ```
 $ source /opt/rh/devtoolset-7/enable
-$ g++ -I /usr/include/xrootd -I <REPODIR>/src -fPIC -g -c MyXrdCksManager.cc
-$ g++ -g -shared -o MyXrdCksManager.so MyXrdCksManager.o
+$ g++ -I /usr/include/xrootd -I <REPODIR>/src -fPIC -g -c XrdCksPlugin.cc
+$ g++ -g -shared -o libXrdCksPlugin.so XrdCksPlugin.o
 ```
 
 ## Usage
 To use the library, add the following to xrootd config:
 ```
-ofs.ckslib * <path to MyXrdCksManager.so> <path to checksum script>
+ofs.ckslib * <path to libXrdCksPlugin.so> <path to checksum script>
 ```
