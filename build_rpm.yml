@@ -10,6 +10,9 @@
     ckslib_release: 1
     rpmbuild_home: "{{ansible_env.HOME}}/rpmbuild"
   tasks:
+  - name: clean old build
+    command:
+      cmd: rm -rf "{{rpmbuild_home}}"
   - name: install devtoolset
     yum:
       name: "{{'devtoolset-7' if ansible_distribution == 'CentOS' else 'gcc-toolset-9'}}"
@@ -23,9 +26,18 @@
       path: "{{rpmbuild_home}}{{item}}"
       state: directory
     loop: [ '', '/RPMS', '/SOURCES', '/SRPMS', '/BUILD', '/BUILDROOT', '/SPECS']
+  - name: create dir for source file
+    file:
+      path: "{{rpmbuild_home}}/tmp"
+      state: directory
+  - name: clone ckslib repository
+    command:
+      cmd: git clone -b "{{ckslib_branch}}" "{{ckslib_repo}}" .
+      chdir: "{{rpmbuild_home}}/tmp"
   - name: create source file
     shell:
-      cmd: git archive --remote="{{ckslib_repo}}" "{{ckslib_branch}}" > "{{rpmbuild_home}}/SOURCES/xrdckslib.tar.gz"
+      cmd: git archive "{{ckslib_branch}}" > "{{rpmbuild_home}}/SOURCES/xrdckslib.tar.gz"
+      chdir: "{{rpmbuild_home}}/tmp"
   - name: render spec template
     template:
       src: "{{playbook_dir}}/packaging/CksLib.spec"
