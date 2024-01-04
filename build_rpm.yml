@@ -25,7 +25,7 @@
     loop: [ '', '/RPMS', '/SOURCES', '/SRPMS', '/BUILD', '/BUILDROOT', '/SPECS']
   - name: create source file
     shell:
-      cmd: git archive --remote="{{ckslib_repo}}" "{{ckslib_branch}}" | gzip -9 > "{{rpmbuild_home}}/SOURCES/xrdckslib.tar.gz"
+      cmd: git archive --remote="{{ckslib_repo}}" "{{ckslib_branch}}" > "{{rpmbuild_home}}/SOURCES/xrdckslib.tar.gz"
   - name: render spec template
     template:
       src: "{{playbook_dir}}/packaging/CksLib.spec"
