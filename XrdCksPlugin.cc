@@ -41,10 +41,10 @@
 #endif
 
 
-class MyXrdCksManager : public XrdCks
+class XrdCksPlugin : public XrdCks
 {
 public:
-  MyXrdCksManager(XrdSysError *erP) : XrdCks(erP) {};
+  XrdCksPlugin(XrdSysError *erP) : XrdCks(erP) {};
 
   /******************************************************************************/
   /*                                   G e t                                    */
@@ -114,11 +114,11 @@ public:
 };
 
 
-extern "C" MyXrdCksManager *XrdCksInit(XrdSysError *eDest,
+extern "C" XrdCksPlugin *XrdCksInit(XrdSysError *eDest,
                                           const char  *csName,
                                           const char  *cFN,
                                           const char  *Parms) {
-  return new MyXrdCksManager(eDest);
+  return new XrdCksPlugin(eDest);
 };
 
 XrdVERSIONINFO(XrdCksInit,"MyCksums-2");
