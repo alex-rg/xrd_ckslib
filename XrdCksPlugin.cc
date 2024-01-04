@@ -93,17 +93,16 @@ public:
     int rc;
     char* ln;
     char out_buf[1024];
+    uint32_t AdlerValue;
     rc = theProg.Run(out_buf, 1024, Xfn, NULL, NULL, NULL);  
     if (rc != 0) {
       eDest->Emsg("CksLib: checksum caclulation failed for ", Xfn, "Error message: ", out_buf);
     } else {
-      for (int i=0; i<4; i++) {
-        Cks.Value[i] = 0;
-        for (int j=0; j<2; j++) {
-          unsigned char c;
-          Cks.Value[i] += ((c = (out_buf[2*i + j] - '0')) < 10 ? c : (out_buf[2*i + j] - 'a' + 10)) * (j == 0 ? 16 : 1);
-        }
-      } 
+      AdlerValue = strtoull(out_buf, NULL, 16);
+#ifndef Xrd_Big_Endian
+      AdlerValue = htonl(AdlerValue);
+#endif
+      memcpy(Cks.Value, (char*)&AdlerValue, 4);
       Cks.Length = 4;
     }
     return rc;
