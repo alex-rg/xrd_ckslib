@@ -22,7 +22,7 @@
     file:
       path: "{{rpmbuild_home}}{{item}}"
       state: directory
-    loop: [ '', '/RPMS', '/SOURCES', '/SRPMS', '/BUILD', '/BUILDROOT']
+    loop: [ '', '/RPMS', '/SOURCES', '/SRPMS', '/BUILD', '/BUILDROOT', '/SPECS']
   - name: create source file
     shell:
       cmd: git archive --remote="{{ckslib_repo}}" "{{ckslib_branch}}" | gzip -9 > "{{rpmbuild_home}}/SOURCES/ckslib.tar.gz"
