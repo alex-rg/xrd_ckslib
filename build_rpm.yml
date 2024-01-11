@@ -1,7 +1,7 @@
 - name: setup build environment for xrootd
   hosts: localhost
   vars:
-    xrootd_version: 5.5.1
+    xrootd_version: 5.5.4
     xrootd_repo: https://github.com/xrootd/xrootd.git
     xrootd_branch: v5.5.x
     ckslib_repo: https://github.com/alex-rg/xrd_ckslib.git
