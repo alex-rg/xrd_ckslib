@@ -91,7 +91,6 @@ public:
 
   int Calc( const char *Xfn, XrdCksData &Cks, int doSet=1) {
     int rc;
-    char* ln;
     char out_buf[1024];
     uint32_t AdlerValue;
     rc = theProg.Run(out_buf, 1024, Xfn, NULL, NULL, NULL);  
