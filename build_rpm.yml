@@ -13,6 +13,11 @@
   - name: clean old build
     command:
       cmd: rm -rf "{{rpmbuild_home}}"
+  - name: install Centos scl
+    yum:
+      name: centos-release-scl
+      state: present
+    when: "{{ ansible_distribution == 'CentOS' }}"
   - name: install devtoolset
     yum:
       name: "{{'devtoolset-7' if ansible_distribution == 'CentOS' else 'gcc-toolset-9'}}"
