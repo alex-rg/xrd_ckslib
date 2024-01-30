@@ -1,20 +1,19 @@
 Name:    xrootd-ceph-ckslib
-Version: 0.0
-Release: 1%{?dist}
+Version: {{ckslib_version}}
+Release: {{ckslib_release}}%{?dist}
 Summary: Checksum library for xrootd server with ceph backend	
 
 Group: XrootD plugins
 License: LGPLv3+
 URL: https://github.com/alex-rg/xrd_ckslib
 Source0: xrdckslib.tar.gz
-Source1: xrootd.tar.gz
 
 BuildRequires: gcc
 BuildRequires: make
 
-%define xrootd_version v5.5.1
-%define xrootd_branch v5.5.x
-%define xrootd_repo https://github.com/xrootd/xrootd.git
+%define xrootd_version v{{xrootd_version}}
+%define xrootd_branch {{xrootd_branch}}
+%define xrootd_repo {{xrootd_repo}}
 
 %description
 Custom checksum library for xrootd with ceph backend.

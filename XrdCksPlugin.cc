@@ -29,11 +29,15 @@
 /******************************************************************************/
 
 #include <cerrno>
+#include <cstdio>
 
 #include "XrdCks/XrdCksXAttr.hh"
 #include "XrdCks/XrdCks.hh"
 #include "XrdOuc/XrdOucXAttr.hh"
 #include "XrdVersion.hh"
+
+#include "XrdOuc/XrdOucProg.hh"
+#include "XrdOuc/XrdOucStream.hh"
 
 
 #ifndef ENOATTR
@@ -44,7 +48,12 @@
 class XrdCksPlugin : public XrdCks
 {
 public:
-  XrdCksPlugin(XrdSysError *erP) : XrdCks(erP) {};
+  XrdOucProg theProg = XrdOucProg(0);
+
+  XrdCksPlugin(XrdSysError *erP, const char* prog) : XrdCks(erP) {
+    int (*ppntr)(XrdOucStream*, char**, int) =0;
+    theProg.Setup(prog, erP, ppntr);
+  };
 
   /******************************************************************************/
   /*                                   G e t                                    */
@@ -81,7 +90,21 @@ public:
   };
 
   int Calc( const char *Xfn, XrdCksData &Cks, int doSet=1) {
-    return -ENOTSUP;
+    int rc;
+    char out_buf[1024];
+    uint32_t AdlerValue;
+    rc = theProg.Run(out_buf, 1024, Xfn, NULL, NULL, NULL);  
+    if (rc != 0) {
+      eDest->Emsg("CksLib: checksum caclulation failed for ", Xfn, "Error message: ", out_buf);
+    } else {
+      AdlerValue = strtoull(out_buf, NULL, 16);
+#ifndef Xrd_Big_Endian
+      AdlerValue = htonl(AdlerValue);
+#endif
+      memcpy(Cks.Value, (char*)&AdlerValue, 4);
+      Cks.Length = 4;
+    }
+    return rc;
   };
 
   int Ver(  const char *Xfn, XrdCksData &Cks) {
@@ -118,7 +141,7 @@ extern "C" XrdCksPlugin *XrdCksInit(XrdSysError *eDest,
                                           const char  *csName,
                                           const char  *cFN,
                                           const char  *Parms) {
-  return new XrdCksPlugin(eDest);
+  return new XrdCksPlugin(eDest, cFN);
 };
 
 XrdVERSIONINFO(XrdCksInit,"MyCksums-2");
