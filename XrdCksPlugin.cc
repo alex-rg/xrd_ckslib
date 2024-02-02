@@ -30,6 +30,7 @@
 
 #include <cerrno>
 #include <cstdio>
+#include <sys/stat.h>
 
 #include "XrdCks/XrdCksXAttr.hh"
 #include "XrdCks/XrdCks.hh"
@@ -44,15 +45,41 @@
 #define ENOATTR ENODATA
 #endif
 
+//Maximum number of bytes checksum script may print
+#define MAX_CKS_SCRIPT_OUTPUT_LENGHT 1023
+#define MAX_CKS_NAME_LENGTH 7
+
+#define SUPPORTED_CHECKSUM_LENGTH 4
+const char SUPPORTED_CHECKSUM[] = "adler32";
+/* Currently we support only one checksum type.
+ * To add more, one should modify the following methods: 
+ *
+ * Get  -- to allow another type
+ * Calc -- to support different length
+ * Name -- to support different name
+ * Size -- to support different size
+ * */
+
 
 class XrdCksPlugin : public XrdCks
 {
+  int prog_ready = 0;
 public:
   XrdOucProg theProg = XrdOucProg(0);
 
   XrdCksPlugin(XrdSysError *erP, const char* prog) : XrdCks(erP) {
-    int (*ppntr)(XrdOucStream*, char**, int) =0;
-    theProg.Setup(prog, erP, ppntr);
+    if (prog) {
+      struct stat st_buf;
+      if (stat(prog, &st_buf) == 0) {
+        int (*ppntr)(XrdOucStream*, char**, int) =0;
+        theProg.Setup(prog, erP, ppntr);
+        prog_ready = 1;
+      } else {
+        eDest->Emsg("CksLib: Init failed. Can not stat checksum script", prog);
+      }
+    } else {
+      eDest->Say("CksLib: Init failed. Checksum script path not given");
+    }
   };
 
   /******************************************************************************/
@@ -61,16 +88,28 @@ public:
 
   int Get(const char *Pfn, XrdCksData &Cks)
   {
-     /* This method is basically a copy of XrdCksManager::Get, but without stale
-      * checksum check
+     /**
+      * Retrieve checksum value from metadata
+      *
+      * @parm Pfn  path of the file whose checksum is to be retrieved
+      * @parm Cks  Checksum object to fill
+      *
+      * @return   Length of the retrieved checksum (in bytes) on success,
+      *           negative error code on failure, namely:
+      *           ENOTSUP (op not supported)  -- if requested checksum type is not supported
+      *           ESRCH (no such process)     -- if checksum attirbute is not present
+      *           ESTALE (stale file handle)  -- if checksum type written in the attributes differs from supported one
+      *                                          or its length differs from the expected one.
+      *
+      *
+      * This method is basically a copy of XrdCksManager::Get, but without stale checksum check
       */
     
      XrdOucXAttr<XrdCksXAttr> xCS;
      int rc, nFault;
   
-  // Determine which checksum to get (we will accept unsupported ones as well)
-  //
-     if (strncmp(Cks.Name, "adler32", 7) ) return -ENOTSUP;
+  // Check that we support given checksum type
+     if (strncmp(Cks.Name, SUPPORTED_CHECKSUM, MAX_CKS_NAME_LENGTH) ) return -ENOTSUP;
      if (!xCS.Attr.Cks.Set(Cks.Name)) return -ENOTSUP;
   
   // Retreive the attribute
@@ -82,7 +121,7 @@ public:
      nFault = strcmp(xCS.Attr.Cks.Name, Cks.Name);
      Cks = xCS.Attr.Cks;
   
-     return (nFault  ||  Cks.Length > XrdCksData::ValuSize || Cks.Length <= 0 ? -ESTALE : int(Cks.Length));
+     return (nFault || Cks.Length > XrdCksData::ValuSize || Cks.Length <= 0 ? -ESTALE : int(Cks.Length));
   };
 
   int Del(const char *Xfn, XrdCksData &Cks) {
@@ -90,10 +129,22 @@ public:
   };
 
   int Calc( const char *Xfn, XrdCksData &Cks, int doSet=1) {
+     /**
+      * Run checksum calculation script, read its output and use it as a checksum value
+      *
+      * @parm Xfn    path of the file whose checksum is to be calculated
+      * @parm Cks    Checksum object to fill
+      * @parm doSet  Ignored
+      *
+      * @return  exit code from script execution
+      *
+      * This method is basically a copy of XrdCksManager::Get, but without stale checksum check
+      */
+
     int rc;
-    char out_buf[1024];
+    char out_buf[MAX_CKS_SCRIPT_OUTPUT_LENGHT + 1];
     uint32_t AdlerValue;
-    rc = theProg.Run(out_buf, 1024, Xfn, NULL, NULL, NULL);  
+    rc = theProg.Run(out_buf, MAX_CKS_SCRIPT_OUTPUT_LENGHT, Xfn, NULL, NULL, NULL);  
     if (rc != 0) {
       eDest->Emsg("CksLib: checksum caclulation failed for ", Xfn, "Error message: ", out_buf);
     } else {
@@ -101,8 +152,8 @@ public:
 #ifndef Xrd_Big_Endian
       AdlerValue = htonl(AdlerValue);
 #endif
-      memcpy(Cks.Value, (char*)&AdlerValue, 4);
-      Cks.Length = 4;
+      memcpy(Cks.Value, (char*)&AdlerValue, SUPPORTED_CHECKSUM_LENGTH);
+      Cks.Length = SUPPORTED_CHECKSUM_LENGTH;
     }
     return rc;
   };
@@ -116,7 +167,7 @@ public:
   };
 
   int Init(const char *ConfigFN, const char *DfltCalc=0) {
-    return 1;
+    return prog_ready;
   };
 
   char * List(const char *Xfn, char *Buff, int Blen, char Sep=' ') {
@@ -124,11 +175,11 @@ public:
   };
 
   const char *Name(int seqNum=0) {
-    return "adler32";
+    return SUPPORTED_CHECKSUM;
   };
 
   int Size (const char *Name=0) {
-    return 4;
+    return SUPPORTED_CHECKSUM_LENGTH;
   };
 
   int Set(const char *Xfn, XrdCksData &Cks, int myTIme=0) {
