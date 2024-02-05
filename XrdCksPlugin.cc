@@ -49,16 +49,30 @@
 #define MAX_CKS_SCRIPT_OUTPUT_LENGHT 1023
 #define MAX_CKS_NAME_LENGTH 7
 
-#define SUPPORTED_CHECKSUM_LENGTH 4
-const char SUPPORTED_CHECKSUM[] = "adler32";
+
 /* Currently we support only one checksum type.
- * To add more, one should modify the following methods: 
+ * To add more, one should modify the following: 
  *
- * Get  -- to allow another type
- * Calc -- to support different length
- * Name -- to support different name
- * Size -- to support different size
+ * - Add new checksum name to SUPPORTED_CHECKSUMS and  SUPPORTED_CHECKSUMS_LENGTHS arrays
+ * - Amend SUPPORTED_CHECKSUMS_ARR_LENGTH accordingly (+1 in case of single checksum addition)
+ * - Adjust MAX_CKS_NAME_LENGTH/MAX_CKS_SCRIPT_OUTPUT_LENGTH if necessary
+ *
+ * If the checksum is not 4 bytes in length, Calc method may need adjustments as well.
  * */
+
+const int SUPPORTED_CHECKSUMS_ARR_LENGTH = 1;
+const int SUPPORTED_CHECKSUMS_LENGTHS[] = { 4 };
+const char* SUPPORTED_CHECKSUMS[] = { "adler32" };
+
+int cks_idx_by_name(const char* Name) {
+  int rc = -1;
+  for (int i=0; i < SUPPORTED_CHECKSUMS_ARR_LENGTH; i++) {
+    if ( ! strncmp(Name, SUPPORTED_CHECKSUMS[i], MAX_CKS_NAME_LENGTH) ) {
+      rc = i;
+    }
+  }
+  return rc;
+}
 
 
 class XrdCksPlugin : public XrdCks
@@ -109,7 +123,10 @@ public:
      int rc, nFault;
   
   // Check that we support given checksum type
-     if (strncmp(Cks.Name, SUPPORTED_CHECKSUM, MAX_CKS_NAME_LENGTH) ) return -ENOTSUP;
+     rc = cks_idx_by_name(Cks.Name);
+     if (rc < 0) {
+       return -ENOTSUP;
+     }
      if (!xCS.Attr.Cks.Set(Cks.Name)) return -ENOTSUP;
   
   // Retreive the attribute
@@ -143,17 +160,23 @@ public:
 
     int rc;
     char out_buf[MAX_CKS_SCRIPT_OUTPUT_LENGHT + 1];
-    uint32_t AdlerValue;
-    rc = theProg.Run(out_buf, MAX_CKS_SCRIPT_OUTPUT_LENGHT, Xfn, NULL, NULL, NULL);  
-    if (rc != 0) {
-      eDest->Emsg("CksLib: checksum caclulation failed for ", Xfn, "Error message: ", out_buf);
+    uint32_t CksValue;
+    int idx = cks_idx_by_name(Cks.Name);
+    if (idx < 0) {
+      eDest->Emsg("CksLib: checksum not supported: ", Cks.Name, Xfn);
+      rc = -ENOTSUP;
     } else {
-      AdlerValue = strtoull(out_buf, NULL, 16);
+      rc = theProg.Run(out_buf, MAX_CKS_SCRIPT_OUTPUT_LENGHT, Xfn, NULL, NULL, NULL);  
+      if (rc != 0) {
+        eDest->Emsg("CksLib: checksum caclulation failed for ", Xfn, "Error message: ", out_buf);
+      } else {
+        CksValue = strtoull(out_buf, NULL, 16);
 #ifndef Xrd_Big_Endian
-      AdlerValue = htonl(AdlerValue);
+        CksValue = htonl(CksValue);
 #endif
-      memcpy(Cks.Value, (char*)&AdlerValue, SUPPORTED_CHECKSUM_LENGTH);
-      Cks.Length = SUPPORTED_CHECKSUM_LENGTH;
+        memcpy(Cks.Value, (char*)&CksValue, SUPPORTED_CHECKSUMS_LENGTHS[idx]);
+        Cks.Length = SUPPORTED_CHECKSUMS_LENGTHS[idx];
+      }
     }
     return rc;
   };
@@ -175,11 +198,16 @@ public:
   };
 
   const char *Name(int seqNum=0) {
-    return SUPPORTED_CHECKSUM;
+    return SUPPORTED_CHECKSUMS[seqNum];
   };
 
   int Size (const char *Name=0) {
-    return SUPPORTED_CHECKSUM_LENGTH;
+    int idx = cks_idx_by_name(Name);
+    int rc = -ENOTSUP;
+    if (idx >= 0) {
+      rc = SUPPORTED_CHECKSUMS_LENGTHS[idx];
+    }
+    return rc;
   };
 
   int Set(const char *Xfn, XrdCksData &Cks, int myTIme=0) {
